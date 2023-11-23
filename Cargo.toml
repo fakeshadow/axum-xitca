@@ -1,0 +1,25 @@
+[package]
+name = "axum-xitca"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = "0.6"
+futures-core = { version = "0.3", default-features = false }
+http-body = "0.4"
+pin-project-lite = "0.2"
+tower = "0.4"
+xitca-http = { version = "0.1" }
+xitca-io = "0.1"
+xitca-server = { version = "0.1" }
+xitca-service = { version = "0.1" }
+xitca-unsafe-collection = { version = "0.1", features = ["bytes"] }
+
+[patch.crates-io]
+xitca-http = { git = "https://github.com/HFQR/xitca-web.git" }
+xitca-io = { git = "https://github.com/HFQR/xitca-web.git" }
+xitca-server = { git = "https://github.com/HFQR/xitca-web.git" }
+xitca-service = { git = "https://github.com/HFQR/xitca-web.git" }
+xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web.git" }
