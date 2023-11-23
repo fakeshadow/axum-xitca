@@ -3,12 +3,10 @@ use crate::tower_compat::TowerHttp;
 use axum::routing::{get, Router};
 
 fn main() -> std::io::Result<()> {
+    let builder = || Router::new().route("/", get(|| async { "hello,world!" }));
+
     xitca_server::Builder::new()
-        .bind(
-            "axum-xitca",
-            "localhost:8080",
-            TowerHttp::new(|| Router::new().route("/", get(|| async { "hello,world!" }))),
-        )?
+        .bind("axum-xitca", "localhost:8080", TowerHttp::service(builder))?
         .build()
         .wait()
 }
@@ -26,7 +24,7 @@ mod tower_compat {
     use http_body::Body;
     use pin_project_lite::pin_project;
     use xitca_http::{
-        body::{RequestBody, ResponseBody},
+        body::{none_body_hint, RequestBody, ResponseBody},
         bytes::Bytes,
         http::{HeaderMap, Request, RequestExt, Response},
         BodyError, HttpServiceBuilder,
@@ -43,7 +41,7 @@ mod tower_compat {
     }
 
     impl<S, B> TowerHttp<S, B> {
-        pub fn new(
+        pub fn service(
             service: impl Fn() -> S + Send + Sync + Clone,
         ) -> impl Service<Response = impl ReadyService + Service<IoStream>, Error = impl fmt::Debug>
         where
@@ -136,6 +134,14 @@ mod tower_compat {
                 .body
                 .poll_data(cx)
                 .map_err(|e| BodyError::from(Box::new(e) as Box<dyn error::Error + Send + Sync>))
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            if Body::is_end_stream(&self.body) {
+                return none_body_hint();
+            }
+            let hint = Body::size_hint(&self.body);
+            (hint.lower() as _, hint.upper().map(|u| u as _))
         }
     }
 }
