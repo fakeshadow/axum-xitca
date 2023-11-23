@@ -20,6 +20,7 @@ mod tower_compat {
         task::{Context, Poll},
     };
 
+    use axum::extract::ConnectInfo;
     use futures_core::stream::Stream;
     use http_body::Body;
     use pin_project_lite::pin_project;
@@ -79,11 +80,12 @@ mod tower_compat {
             req: Request<RequestExt<RequestBody>>,
         ) -> Result<Self::Response, Self::Error> {
             let (parts, ext) = req.into_parts();
-            let (_, body) = ext.replace_body(());
+            let (ext, body) = ext.replace_body(());
             let body = _RequestBody {
                 body: FakeSend::new(body),
             };
-            let req = Request::from_parts(parts, body);
+            let mut req = Request::from_parts(parts, body);
+            let _ = req.extensions_mut().insert(ConnectInfo(*ext.socket_addr()));
             let res = self.service.clone().call(req).await?;
             let (parts, body) = res.into_parts();
             let body = ResponseBody::box_stream(_ResponseBody { body });
