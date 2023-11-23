@@ -13,6 +13,7 @@ fn main() -> std::io::Result<()> {
 
 mod tower_compat {
     use std::{
+        cell::RefCell,
         convert::Infallible,
         error, fmt,
         marker::PhantomData,
@@ -37,7 +38,7 @@ mod tower_compat {
     use xitca_unsafe_collection::fake_send_sync::FakeSend;
 
     pub struct TowerHttp<S, B> {
-        service: S,
+        service: RefCell<S>,
         _p: PhantomData<fn(B)>,
     }
 
@@ -46,7 +47,7 @@ mod tower_compat {
             service: impl Fn() -> S + Send + Sync + Clone,
         ) -> impl Service<Response = impl ReadyService + Service<IoStream>, Error = impl fmt::Debug>
         where
-            S: tower::Service<Request<_RequestBody>, Response = Response<B>> + Send + Clone,
+            S: tower::Service<Request<_RequestBody>, Response = Response<B>>,
             S::Error: fmt::Debug,
             B: Body<Data = Bytes> + Send + 'static,
             B::Error: error::Error + Send + Sync,
@@ -56,7 +57,7 @@ mod tower_compat {
                 async move {
                     let service = service();
                     Ok::<_, Infallible>(TowerHttp {
-                        service,
+                        service: RefCell::new(service),
                         _p: PhantomData,
                     })
                 }
@@ -68,7 +69,7 @@ mod tower_compat {
 
     impl<S, B> Service<Request<RequestExt<RequestBody>>> for TowerHttp<S, B>
     where
-        S: tower::Service<Request<_RequestBody>, Response = Response<B>> + Send + Clone,
+        S: tower::Service<Request<_RequestBody>, Response = Response<B>>,
         B: Body<Data = Bytes> + Send + 'static,
         B::Error: error::Error + Send + Sync,
     {
@@ -86,7 +87,8 @@ mod tower_compat {
             };
             let mut req = Request::from_parts(parts, body);
             let _ = req.extensions_mut().insert(ConnectInfo(*ext.socket_addr()));
-            let res = self.service.clone().call(req).await?;
+            let fut = self.service.borrow_mut().call(req);
+            let res = fut.await?;
             let (parts, body) = res.into_parts();
             let body = ResponseBody::box_stream(_ResponseBody { body });
             let res = Response::from_parts(parts, body);
