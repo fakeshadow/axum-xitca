@@ -3,10 +3,14 @@ use crate::tower_compat::TowerHttp;
 use axum::routing::{get, Router};
 
 fn main() -> std::io::Result<()> {
-    let builder = || Router::new().route("/", get(|| async { "hello,world!" }));
+    let service = TowerHttp::service(|| async {
+        Router::new()
+            .with_state(String::new())
+            .route("/", get(|| async { "hello,world!" }))
+    });
 
     xitca_server::Builder::new()
-        .bind("axum-xitca", "localhost:8080", TowerHttp::service(builder))?
+        .bind("axum-xitca", "localhost:8080", service)?
         .build()
         .wait()
 }
@@ -16,6 +20,7 @@ mod tower_compat {
         cell::RefCell,
         convert::Infallible,
         error, fmt,
+        future::Future,
         marker::PhantomData,
         pin::Pin,
         task::{Context, Poll},
@@ -43,10 +48,12 @@ mod tower_compat {
     }
 
     impl<S, B> TowerHttp<S, B> {
-        pub fn service(
-            service: impl Fn() -> S + Send + Sync + Clone,
+        pub fn service<F, Fut>(
+            service: F,
         ) -> impl Service<Response = impl ReadyService + Service<IoStream>, Error = impl fmt::Debug>
         where
+            F: Fn() -> Fut + Send + Sync + Clone,
+            Fut: Future<Output = S>,
             S: tower::Service<Request<_RequestBody>, Response = Response<B>>,
             S::Error: fmt::Debug,
             B: Body<Data = Bytes> + Send + 'static,
@@ -55,7 +62,7 @@ mod tower_compat {
             fn_build(move |_| {
                 let service = service.clone();
                 async move {
-                    let service = service();
+                    let service = service().await;
                     Ok::<_, Infallible>(TowerHttp {
                         service: RefCell::new(service),
                         _p: PhantomData,
@@ -88,8 +95,7 @@ mod tower_compat {
             let mut req = Request::from_parts(parts, body);
             let _ = req.extensions_mut().insert(ConnectInfo(*ext.socket_addr()));
             let fut = self.service.borrow_mut().call(req);
-            let res = fut.await?;
-            let (parts, body) = res.into_parts();
+            let (parts, body) = fut.await?.into_parts();
             let body = ResponseBody::box_stream(_ResponseBody { body });
             let res = Response::from_parts(parts, body);
             Ok(res)
